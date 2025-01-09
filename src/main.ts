@@ -1,77 +1,60 @@
 import sdk, { Brightness, Camera, Device, DeviceCreatorSettings, DeviceInformation, DeviceProvider, Intercom, MediaObject, ObjectDetectionTypes, ObjectDetector, ObjectsDetected, OnOff, PanTiltZoom, PanTiltZoomCommand, Reboot, RequestPictureOptions, ScryptedDeviceBase, ScryptedDeviceType, ScryptedInterface, Setting, Settings, SettingValue } from "@scrypted/sdk";
 import { StorageSettings } from '@scrypted/sdk/storage-settings';
 import { RtspProvider } from '../../scrypted/plugins/rtsp/src/rtsp';
-import MqttClient from './mqtt-client';
+import MqttClient, { getMqttTopics } from './mqtt-client';
 import NeolinkCamera from './camera';
 
-// class NeolinkCameraSiren extends ScryptedDeviceBase implements OnOff {
-//     sirenTimeout: NodeJS.Timeout;
+class NeolinkCameraSiren extends ScryptedDeviceBase implements OnOff {
+    sirenTimeout: NodeJS.Timeout;
 
-//     constructor(public camera: ReolinkCamera, nativeId: string) {
-//         super(nativeId);
-//         this.on = false;
-//     }
+    constructor(public camera: NeolinkCamera, nativeId: string) {
+        super(nativeId);
+        this.on = false;
+    }
 
-//     async turnOff() {
-//         this.on = false;
-//         await this.setSiren(false);
-//     }
+    async turnOff() {
+        this.on = false;
+        await this.setSiren(false);
+    }
 
-//     async turnOn() {
-//         this.on = true;
-//         await this.setSiren(true);
-//     }
+    async turnOn() {
+        this.on = true;
+        await this.setSiren(true);
+    }
 
-//     private async setSiren(on: boolean) {
-//         const api = this.camera.getClient();
+    private async setSiren(on: boolean) {
+        const mqttClient = await this.camera.getMqttClient();
+        const { cameraName } = this.camera.storageSettings.values;
+        const { sirenControlTopic } = getMqttTopics(cameraName);
 
-//         // doorbell doesn't seem to support alarm_mode = 'manul'
-//         if (this.camera.storageSettings.values.doorbell) {
-//             if (!on) {
-//                 clearInterval(this.sirenTimeout);
-//                 await api.setSiren(false);
-//                 return;
-//             }
+        await mqttClient.publish(this.console, sirenControlTopic, on ? 'on' : 'off');
+    }
+}
 
-//             // siren lasts around 4 seconds.
-//             this.sirenTimeout = setTimeout(async () => {
-//                 await this.turnOff();
-//             }, 4000);
+class NeolinkCameraFloodlight extends ScryptedDeviceBase implements OnOff {
+    constructor(public camera: NeolinkCamera, nativeId: string) {
+        super(nativeId);
+        this.on = false;
+    }
 
-//             await api.setSiren(true, 1);
-//             return;
-//         }
-//         await api.setSiren(on);
-//     }
-// }
+    async turnOff() {
+        this.on = false;
+        await this.setFloodlight(false);
+    }
 
-// class NeolinkCameraFloodlight extends ScryptedDeviceBase implements OnOff, Brightness {
-//     constructor(public camera: ReolinkCamera, nativeId: string) {
-//         super(nativeId);
-//         this.on = false;
-//     }
+    async turnOn() {
+        this.on = true;
+        await this.setFloodlight(true);
+    }
 
-//     async setBrightness(brightness: number): Promise<void> {
-//         this.brightness = brightness;
-//         await this.setFloodlight(undefined, brightness);
-//     }
+    private async setFloodlight(on?: boolean, brightness?: number) {
+        const mqttClient = await this.camera.getMqttClient();
+        const { cameraName } = this.camera.storageSettings.values;
+        const { floodlightControlTopic } = getMqttTopics(cameraName);
 
-//     async turnOff() {
-//         this.on = false;
-//         await this.setFloodlight(false);
-//     }
-
-//     async turnOn() {
-//         this.on = true;
-//         await this.setFloodlight(true);
-//     }
-
-//     private async setFloodlight(on?: boolean, brightness?: number) {
-//         const api = this.camera.getClientWithToken();
-
-//         await api.setWhiteLedState(on, brightness);
-//     }
-// }
+        await mqttClient.publish(this.console, floodlightControlTopic, on ? 'on' : 'off');
+    }
+}
 
 class NeolinkProvider extends RtspProvider implements Settings {
     mqttClient: MqttClient;
