@@ -1,60 +1,8 @@
-import sdk, { Brightness, Camera, Device, DeviceCreatorSettings, DeviceInformation, DeviceProvider, Intercom, MediaObject, ObjectDetectionTypes, ObjectDetector, ObjectsDetected, OnOff, PanTiltZoom, PanTiltZoomCommand, Reboot, RequestPictureOptions, ScryptedDeviceBase, ScryptedDeviceType, ScryptedInterface, Setting, Settings, SettingValue } from "@scrypted/sdk";
+import { DeviceCreatorSettings, ScryptedInterface, Setting, Settings, SettingValue } from "@scrypted/sdk";
 import { StorageSettings } from '@scrypted/sdk/storage-settings';
 import { RtspProvider } from '../../scrypted/plugins/rtsp/src/rtsp';
-import MqttClient, { getMqttTopics } from './mqtt-client';
+import MqttClient from './mqtt-client';
 import NeolinkCamera from './camera';
-
-class NeolinkCameraSiren extends ScryptedDeviceBase implements OnOff {
-    sirenTimeout: NodeJS.Timeout;
-
-    constructor(public camera: NeolinkCamera, nativeId: string) {
-        super(nativeId);
-        this.on = false;
-    }
-
-    async turnOff() {
-        this.on = false;
-        await this.setSiren(false);
-    }
-
-    async turnOn() {
-        this.on = true;
-        await this.setSiren(true);
-    }
-
-    private async setSiren(on: boolean) {
-        const mqttClient = await this.camera.getMqttClient();
-        const { cameraName } = this.camera.storageSettings.values;
-        const { sirenControlTopic } = getMqttTopics(cameraName);
-
-        await mqttClient.publish(this.console, sirenControlTopic, on ? 'on' : 'off');
-    }
-}
-
-class NeolinkCameraFloodlight extends ScryptedDeviceBase implements OnOff {
-    constructor(public camera: NeolinkCamera, nativeId: string) {
-        super(nativeId);
-        this.on = false;
-    }
-
-    async turnOff() {
-        this.on = false;
-        await this.setFloodlight(false);
-    }
-
-    async turnOn() {
-        this.on = true;
-        await this.setFloodlight(true);
-    }
-
-    private async setFloodlight(on?: boolean, brightness?: number) {
-        const mqttClient = await this.camera.getMqttClient();
-        const { cameraName } = this.camera.storageSettings.values;
-        const { floodlightControlTopic } = getMqttTopics(cameraName);
-
-        await mqttClient.publish(this.console, floodlightControlTopic, on ? 'on' : 'off');
-    }
-}
 
 class NeolinkProvider extends RtspProvider implements Settings {
     mqttClient: MqttClient;

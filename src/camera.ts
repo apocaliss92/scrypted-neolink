@@ -1,5 +1,5 @@
 import { sleep } from "../../scrypted/common/src/sleep";
-import sdk, { Camera, PanTiltZoom, MediaObject, PanTiltZoomCommand, ScryptedDeviceType, ScryptedInterface, RequestPictureOptions, Setting, Settings } from "@scrypted/sdk";
+import sdk, { Camera, PanTiltZoom, MediaObject, PanTiltZoomCommand, ScryptedDeviceType, ScryptedInterface, RequestPictureOptions, Setting, Settings, Device, ScryptedDeviceBase, OnOff } from "@scrypted/sdk";
 import { StorageSettings } from "@scrypted/sdk/storage-settings";
 import { UrlMediaStreamOptions } from '../../scrypted/plugins/ffmpeg-camera/src/common';
 import { Destroyable, RtspSmartCamera, createRtspMediaStreamOptions } from '../../scrypted/plugins/rtsp/src/rtsp';
@@ -19,12 +19,65 @@ enum PtzAction {
     Zoom = 'Zoom',
 }
 
+class NeolinkCameraSiren extends ScryptedDeviceBase implements OnOff {
+    sirenTimeout: NodeJS.Timeout;
+
+    constructor(public camera: NeolinkCamera, nativeId: string) {
+        super(nativeId);
+        this.on = false;
+    }
+
+    async turnOff() {
+        this.on = false;
+        await this.setSiren(false);
+    }
+
+    async turnOn() {
+        this.on = true;
+        await this.setSiren(true);
+    }
+
+    private async setSiren(on: boolean) {
+        const mqttClient = await this.camera.getMqttClient();
+        const { cameraName } = this.camera.storageSettings.values;
+        const { sirenControlTopic } = getMqttTopics(cameraName);
+
+        await mqttClient.publish(this.console, sirenControlTopic, on ? 'on' : 'off');
+    }
+}
+
+class NeolinkCameraFloodlight extends ScryptedDeviceBase implements OnOff {
+    constructor(public camera: NeolinkCamera, nativeId: string) {
+        super(nativeId);
+        this.on = false;
+    }
+
+    async turnOff() {
+        this.on = false;
+        await this.setFloodlight(false);
+    }
+
+    async turnOn() {
+        this.on = true;
+        await this.setFloodlight(true);
+    }
+
+    private async setFloodlight(on?: boolean, brightness?: number) {
+        const mqttClient = await this.camera.getMqttClient();
+        const { cameraName } = this.camera.storageSettings.values;
+        const { floodlightControlTopic } = getMqttTopics(cameraName);
+
+        await mqttClient.publish(this.console, floodlightControlTopic, on ? 'on' : 'off');
+    }
+}
+
+
 class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     mqttClient: MqttClient;
     videoStreamOptions: Promise<UrlMediaStreamOptions[]>;
     motionTimeout: NodeJS.Timeout;
-    // siren: ReolinkCameraSiren;
-    // floodlight: ReolinkCameraFloodlight;
+    siren: NeolinkCameraSiren;
+    floodlight: NeolinkCameraFloodlight;
     batteryTimeout: NodeJS.Timeout;
     lastMqttConnect: number;
     lastPreview?: string;
@@ -62,6 +115,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             multiple: true,
             onPut: async () => {
                 await this.updateDevice();
+                await this.reportDevices();
             },
         },
         // presets: {
@@ -112,7 +166,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             //     this.console.log('Fail fetching presets', e);
             // }
             await this.updateDevice();
-            // await this.reportDevices();
+            await this.reportDevices();
         })()
             .catch(e => {
                 this.console.log('device refresh failed', e);
@@ -304,7 +358,9 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         if (this.lastPreview) {
             const base64Data = this.lastPreview.replace(/^data:image\/\w+;base64,/, "");
             const imageBuffer = Buffer.from(base64Data, 'base64');
-            return await sdk.mediaManager.createMediaObject(imageBuffer, 'image/jpeg');
+            if (imageBuffer) {
+                return await sdk.mediaManager.createMediaObject(imageBuffer, 'image/jpeg');
+            }
         }
     }
 
@@ -378,72 +434,71 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         return await this.storageSettings.getSettings();
     }
 
-    // async reportDevices() {
-    //     const hasSiren = this.hasSiren();
-    //     const hasFloodlight = this.hasFloodlight();
+    async reportDevices() {
+        const hasSiren = this.hasSiren();
+        const hasFloodlight = this.hasFloodlight();
 
-    //     const devices: Device[] = [];
+        const devices: Device[] = [];
 
-    //     if (hasSiren) {
-    //         const sirenNativeId = `${this.nativeId}-siren`;
-    //         const sirenDevice: Device = {
-    //             providerNativeId: this.nativeId,
-    //             name: `${this.name} Siren`,
-    //             nativeId: sirenNativeId,
-    //             info: {
-    //                 ...this.info,
-    //             },
-    //             interfaces: [
-    //                 ScryptedInterface.OnOff
-    //             ],
-    //             type: ScryptedDeviceType.Siren,
-    //         };
+        if (hasSiren) {
+            const sirenNativeId = `${this.nativeId}-siren`;
+            const sirenDevice: Device = {
+                providerNativeId: this.nativeId,
+                name: `${this.name} Siren`,
+                nativeId: sirenNativeId,
+                info: {
+                    ...this.info,
+                },
+                interfaces: [
+                    ScryptedInterface.OnOff
+                ],
+                type: ScryptedDeviceType.Siren,
+            };
 
-    //         devices.push(sirenDevice);
-    //     }
+            devices.push(sirenDevice);
+        }
 
-    //     if (hasFloodlight) {
-    //         const floodlightNativeId = `${this.nativeId}-floodlight`;
-    //         const floodlightDevice: Device = {
-    //             providerNativeId: this.nativeId,
-    //             name: `${this.name} Floodlight`,
-    //             nativeId: floodlightNativeId,
-    //             info: {
-    //                 ...this.info,
-    //             },
-    //             interfaces: [
-    //                 ScryptedInterface.OnOff
-    //             ],
-    //             type: ScryptedDeviceType.Light,
-    //         };
+        if (hasFloodlight) {
+            const floodlightNativeId = `${this.nativeId}-floodlight`;
+            const floodlightDevice: Device = {
+                providerNativeId: this.nativeId,
+                name: `${this.name} Floodlight`,
+                nativeId: floodlightNativeId,
+                info: {
+                    ...this.info,
+                },
+                interfaces: [
+                    ScryptedInterface.OnOff
+                ],
+                type: ScryptedDeviceType.Light,
+            };
 
-    //         devices.push(floodlightDevice);
-    //     }
+            devices.push(floodlightDevice);
+        }
 
-    //     sdk.deviceManager.onDevicesChanged({
-    //         providerNativeId: this.nativeId,
-    //         devices
-    //     });
-    // }
+        sdk.deviceManager.onDevicesChanged({
+            providerNativeId: this.nativeId,
+            devices
+        });
+    }
 
-    // async getDevice(nativeId: string): Promise<any> {
-    //     if (nativeId.endsWith('-siren')) {
-    //         this.siren ||= new ReolinkCameraSiren(this, nativeId);
-    //         return this.siren;
-    //     } else if (nativeId.endsWith('-floodlight')) {
-    //         this.floodlight ||= new ReolinkCameraFloodlight(this, nativeId);
-    //         return this.floodlight;
-    //     }
-    // }
+    async getDevice(nativeId: string): Promise<any> {
+        if (nativeId.endsWith('-siren')) {
+            this.siren ||= new NeolinkCameraSiren(this, nativeId);
+            return this.siren;
+        } else if (nativeId.endsWith('-floodlight')) {
+            this.floodlight ||= new NeolinkCameraFloodlight(this, nativeId);
+            return this.floodlight;
+        }
+    }
 
-    // async releaseDevice(id: string, nativeId: string) {
-    //     if (nativeId.endsWith('-siren')) {
-    //         delete this.siren;
-    //     } else
-    //         if (nativeId.endsWith('-floodlight')) {
-    //             delete this.floodlight;
-    //         }
-    // }
+    async releaseDevice(id: string, nativeId: string) {
+        if (nativeId.endsWith('-siren')) {
+            delete this.siren;
+        } else if (nativeId.endsWith('-floodlight')) {
+            delete this.floodlight;
+        }
+    }
 }
 
 export default NeolinkCamera;
