@@ -1,8 +1,9 @@
-import { DeviceCreatorSettings, ScryptedInterface, Setting, Settings, SettingValue } from "@scrypted/sdk";
+import sdk, { DeviceCreatorSettings, ScryptedInterface, Setting, Settings, SettingValue } from "@scrypted/sdk";
 import { StorageSettings } from '@scrypted/sdk/storage-settings';
 import { RtspProvider } from '../../scrypted/plugins/rtsp/src/rtsp';
-import MqttClient from './mqtt-client';
 import NeolinkCamera from './camera';
+import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
+import { getMqttBasicClient } from '../../scrypted-apocaliss-base/src/basePlugin';
 
 class NeolinkProvider extends RtspProvider implements Settings {
     mqttClient: MqttClient;
@@ -25,6 +26,29 @@ class NeolinkProvider extends RtspProvider implements Settings {
             key: 'password',
             title: 'RTSP Password',
             type: 'password',
+        },
+        useMqttPluginCredentials: {
+            title: 'Use MQTT plugin credentials',
+            type: 'boolean',
+            immediate: true,
+            group: 'MQTT',
+        },
+        mqttHost: {
+            title: 'Host',
+            description: 'Specify the mqtt address.',
+            placeholder: 'mqtt://192.168.1.100',
+            group: 'MQTT',
+        },
+        mqttUsename: {
+            title: 'Username',
+            description: 'Specify the mqtt username.',
+            group: 'MQTT',
+        },
+        mqttPassword: {
+            title: 'Password',
+            description: 'Specify the mqtt password.',
+            type: 'password',
+            group: 'MQTT',
         },
     });
 
@@ -84,6 +108,35 @@ class NeolinkProvider extends RtspProvider implements Settings {
 
     createCamera(nativeId: string) {
         return new NeolinkCamera(nativeId, this);
+    }
+
+    private async setupMqttClient() {
+        const logger = this.console;
+
+        if (this.mqttClient) {
+            this.mqttClient.disconnect();
+            this.mqttClient = undefined;
+        }
+
+        try {
+            this.mqttClient = await getMqttBasicClient({
+                logger,
+                useMqttPluginCredentials: this.storageSettings.getItem('useMqttPluginCredentials'),
+                mqttHost: this.storageSettings.getItem('mqttHost'),
+                mqttUsename: this.storageSettings.getItem('mqttUsename'),
+                mqttPassword: this.storageSettings.getItem('mqttPassword'),
+            });
+        } catch (e) {
+            this.console.log('Error setting up MQTT client', e);
+        }
+    }
+
+    async getMqttClient() {
+        if (!this.mqttClient) {
+            await this.setupMqttClient();
+        }
+
+        return this.mqttClient;
     }
 }
 

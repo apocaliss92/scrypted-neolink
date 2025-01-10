@@ -28,3 +28,8 @@ enable_battery = true
 enable_preview = true
 battery_update = 20000
 preview_update = 30000 
+
+TODO:
+Commands: IR - led - pir - Reboot
+Update status based on MQTT status messages
+Add text input to change live configuration (+ fetching current one)
