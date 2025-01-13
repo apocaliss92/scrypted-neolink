@@ -6,12 +6,14 @@ import { Destroyable, RtspSmartCamera, createRtspMediaStreamOptions } from '../.
 import NeolinkProvider from "./main";
 import EventEmitter from "events";
 import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
-import { getMqttTopics, subscribeToNeolinkTopic, unsubscribeFromNeolinkTopic } from "./utils";
+import { getMqttTopics, subscribeToNeolinkTopic, subscribeToNeolinkTopics, unsubscribeFromNeolinkTopic } from "./utils";
 
 enum Ability {
     Battery = 'Battery',
     Floodlight = 'Floodlight',
+    FloodlightTasks = 'FloodlightTasks',
     Siren = 'Siren',
+    Pir = 'Pir',
 }
 
 enum PtzAction {
@@ -19,6 +21,11 @@ enum PtzAction {
     Tilt = 'Tilt',
     Zoom = 'Zoom',
 }
+
+const floodlightSuffix = `floodlight`;
+const floodlightTasksSuffix = `floodlightTasks`;
+const sirenSuffix = `siren`;
+const pirSuffix = `pir`;
 
 class NeolinkCameraSiren extends ScryptedDeviceBase implements OnOff {
     sirenTimeout: NodeJS.Timeout;
@@ -72,6 +79,56 @@ class NeolinkCameraFloodlight extends ScryptedDeviceBase implements OnOff {
     }
 }
 
+class NeolinkCameraFloodlightTasks extends ScryptedDeviceBase implements OnOff {
+    constructor(public camera: NeolinkCamera, nativeId: string) {
+        super(nativeId);
+        this.on = false;
+    }
+
+    async turnOff() {
+        this.on = false;
+        await this.setFloodlightTasks(false);
+    }
+
+    async turnOn() {
+        this.on = true;
+        await this.setFloodlightTasks(true);
+    }
+
+    private async setFloodlightTasks(on?: boolean) {
+        const mqttClient = await this.camera.provider.getMqttClient();
+        const { cameraName } = this.camera.storageSettings.values;
+        const { floodlightTasksControlTopic } = getMqttTopics(cameraName);
+
+        await mqttClient.publish(floodlightTasksControlTopic, on ? 'on' : 'off');
+    }
+}
+
+class NeolinkCameraPir extends ScryptedDeviceBase implements OnOff {
+    constructor(public camera: NeolinkCamera, nativeId: string) {
+        super(nativeId);
+        this.on = false;
+    }
+
+    async turnOff() {
+        this.on = false;
+        await this.setPir(false);
+    }
+
+    async turnOn() {
+        this.on = true;
+        await this.setPir(true);
+    }
+
+    private async setPir(on: boolean) {
+        const mqttClient = await this.camera.provider.getMqttClient();
+        const { cameraName } = this.camera.storageSettings.values;
+        const { pirControlTopic } = getMqttTopics(cameraName);
+
+        await mqttClient.publish(pirControlTopic, on ? 'on' : 'off');
+    }
+}
+
 
 class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     mqttClient: MqttClient;
@@ -79,6 +136,8 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     motionTimeout: NodeJS.Timeout;
     siren: NeolinkCameraSiren;
     floodlight: NeolinkCameraFloodlight;
+    floodlightTasks: NeolinkCameraFloodlightTasks;
+    pir: NeolinkCameraPir;
     batteryTimeout: NodeJS.Timeout;
     lastMqttConnect: number;
     lastPreview?: string;
@@ -112,6 +171,8 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
                 Ability.Battery,
                 Ability.Siren,
                 Ability.Floodlight,
+                Ability.FloodlightTasks,
+                Ability.Pir,
             ],
             multiple: true,
             onPut: async () => {
@@ -228,6 +289,14 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         return this.storageSettings.values.abilities?.includes(Ability.Floodlight);
     }
 
+    hasFloodlightTasks() {
+        return this.storageSettings.values.abilities?.includes(Ability.FloodlightTasks);
+    }
+
+    hasPir() {
+        return this.storageSettings.values.abilities?.includes(Ability.Pir);
+    }
+
     hasBattery() {
         return this.storageSettings.values.abilities?.includes(Ability.Battery);
     }
@@ -239,12 +308,14 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         if (this.storageSettings.values.ptz?.length) {
             interfaces.push(ScryptedInterface.PanTiltZoom);
         }
-        if (this.hasFloodlight() || this.hasSiren())
+        if (this.hasFloodlight() || this.hasSiren() || this.hasFloodlightTasks() || this.hasPir())
             interfaces.push(ScryptedInterface.DeviceProvider);
+
         if (this.hasBattery()) {
             interfaces.push(ScryptedInterface.Battery);
             this.startBatteryCheckInterval();
         }
+
         this.startMqttListeners();
 
         await this.provider.updateDevice(this.nativeId, this.name ?? name, interfaces, ScryptedDeviceType.Camera);
@@ -352,10 +423,6 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         return url.toString();
     }
 
-    // async createVideoStream(vso: UrlMediaStreamOptions): Promise<MediaObject> {
-    //     return super.createVideoStream(vso);
-    // }
-
     async getConstructedVideoStreamOptions(): Promise<UrlMediaStreamOptions[]> {
         const { cameraName } = this.storageSettings.values;
 
@@ -408,11 +475,13 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     async reportDevices() {
         const hasSiren = this.hasSiren();
         const hasFloodlight = this.hasFloodlight();
+        const hasFloodlightTasks = this.hasFloodlightTasks();
+        const hasPir = this.hasPir();
 
         const devices: Device[] = [];
 
         if (hasSiren) {
-            const sirenNativeId = `${this.nativeId}-siren`;
+            const sirenNativeId = `${this.nativeId}-${sirenSuffix}`;
             const sirenDevice: Device = {
                 providerNativeId: this.nativeId,
                 name: `${this.name} Siren`,
@@ -430,7 +499,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         }
 
         if (hasFloodlight) {
-            const floodlightNativeId = `${this.nativeId}-floodlight`;
+            const floodlightNativeId = `${this.nativeId}-${floodlightSuffix}`;
             const floodlightDevice: Device = {
                 providerNativeId: this.nativeId,
                 name: `${this.name} Floodlight`,
@@ -447,6 +516,42 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             devices.push(floodlightDevice);
         }
 
+        if (hasFloodlightTasks) {
+            const floodlightTasksNativeId = `${this.nativeId}-${floodlightTasksSuffix}`;
+            const floodlightTaksDevice: Device = {
+                providerNativeId: this.nativeId,
+                name: `${this.name} Floodlight tasks`,
+                nativeId: floodlightTasksNativeId,
+                info: {
+                    ...this.info,
+                },
+                interfaces: [
+                    ScryptedInterface.OnOff
+                ],
+                type: ScryptedDeviceType.Light,
+            };
+
+            devices.push(floodlightTaksDevice);
+        }
+
+        if (hasPir) {
+            const pirNativeId = `${this.nativeId}-${pirSuffix}`;
+            const pirDevice: Device = {
+                providerNativeId: this.nativeId,
+                name: `${this.name} PIR`,
+                nativeId: pirNativeId,
+                info: {
+                    ...this.info,
+                },
+                interfaces: [
+                    ScryptedInterface.OnOff
+                ],
+                type: ScryptedDeviceType.Sensor,
+            };
+
+            devices.push(pirDevice);
+        }
+
         sdk.deviceManager.onDevicesChanged({
             providerNativeId: this.nativeId,
             devices
@@ -454,20 +559,30 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     }
 
     async getDevice(nativeId: string): Promise<any> {
-        if (nativeId.endsWith('-siren')) {
+        if (nativeId.endsWith(`-${sirenSuffix}`)) {
             this.siren ||= new NeolinkCameraSiren(this, nativeId);
             return this.siren;
-        } else if (nativeId.endsWith('-floodlight')) {
+        } else if (nativeId.endsWith(`-${floodlightSuffix}`)) {
             this.floodlight ||= new NeolinkCameraFloodlight(this, nativeId);
             return this.floodlight;
+        } else if (nativeId.endsWith(`-${floodlightTasksSuffix}`)) {
+            this.floodlightTasks ||= new NeolinkCameraFloodlightTasks(this, nativeId);
+            return this.floodlightTasks;
+        } else if (nativeId.endsWith(`-${pirSuffix}`)) {
+            this.pir ||= new NeolinkCameraPir(this, nativeId);
+            return this.pir;
         }
     }
 
     async releaseDevice(id: string, nativeId: string) {
-        if (nativeId.endsWith('-siren')) {
+        if (nativeId.endsWith(`-${sirenSuffix}`)) {
             delete this.siren;
-        } else if (nativeId.endsWith('-floodlight')) {
+        } else if (nativeId.endsWith(`-${floodlightSuffix}`)) {
             delete this.floodlight;
+        } else if (nativeId.endsWith(`-${floodlightTasksSuffix}`)) {
+            delete this.floodlightTasks;
+        } else if (nativeId.endsWith(`-${pirSuffix}`)) {
+            delete this.pir;
         }
     }
 }

@@ -15,6 +15,7 @@ export const getMqttTopics = (cameraName: string) => {
     const ptzControlTopic = `neolink/${cameraName}/control/ptz`;
     const ptzPresetControlTopic = `neolink/${cameraName}/control/preset`;
     const floodlightControlTopic = `neolink/${cameraName}/control/floodlight`;
+    const floodlightTasksControlTopic = `neolink/${cameraName}/control/floodlight_tasks`;
     const sirenControlTopic = `neolink/${cameraName}/control/siren`;
     const rebootControlTopic = `neolink/${cameraName}/control/reboot`;
     const ledControlTopic = `neolink/${cameraName}/control/led`;
@@ -33,6 +34,7 @@ export const getMqttTopics = (cameraName: string) => {
         ptzControlTopic,
         ptzPresetControlTopic,
         floodlightControlTopic,
+        floodlightTasksControlTopic,
         sirenControlTopic,
         rebootControlTopic,
         ledControlTopic,
