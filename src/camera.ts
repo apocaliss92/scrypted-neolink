@@ -8,7 +8,7 @@ import EventEmitter from "events";
 import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
 import { getMqttTopics, subscribeToNeolinkTopic, unsubscribeFromNeolinkTopic } from "./utils";
 
-enum Ability {
+export enum Ability {
     Battery = 'Battery',
     Floodlight = 'Floodlight',
     FloodlightTasks = 'FloodlightTasks',
@@ -348,11 +348,11 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         const mqttClient = await this.provider.getMqttClient();
         const { previewStatusTopic, statusTopic, motionStatusTopic } = getMqttTopics(cameraName);
 
-        subscribeToNeolinkTopic(mqttClient, previewStatusTopic, this.console, (preview: string) => {
+        await subscribeToNeolinkTopic(mqttClient, previewStatusTopic, this.console, (preview: string) => {
             this.console.log(`New snapshot received: ${preview.substring(0, 20)}...`);
             this.lastPreview = preview;
         });
-        subscribeToNeolinkTopic(mqttClient, statusTopic, this.console, (status: string) => {
+        await subscribeToNeolinkTopic(mqttClient, statusTopic, this.console, (status: string) => {
             this.console.log(`Connection status: ${status}`);
             if (status === 'connected') {
                 this.sleeping = false;

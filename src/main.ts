@@ -1,9 +1,10 @@
 import sdk, { DeviceCreatorSettings, ScryptedInterface, Setting, Settings, SettingValue } from "@scrypted/sdk";
 import { StorageSettings } from '@scrypted/sdk/storage-settings';
 import { RtspProvider } from '../../scrypted/plugins/rtsp/src/rtsp';
-import NeolinkCamera from './camera';
+import NeolinkCamera, { Ability } from './camera';
 import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
 import { getMqttBasicClient } from '../../scrypted-apocaliss-base/src/basePlugin';
+import { subscribeToNeolinkTopic } from "./utils";
 
 class NeolinkProvider extends RtspProvider implements Settings {
     storageSettings = new StorageSettings(this, {
@@ -53,6 +54,17 @@ class NeolinkProvider extends RtspProvider implements Settings {
 
     mqttClient: MqttClient;
 
+    constructor(nativeId?: string) {
+        super(nativeId);
+
+        setTimeout(async () => {
+            const mqttClient = await this.getMqttClient();
+            subscribeToNeolinkTopic(mqttClient, 'neolink/config', this.console, async (config) => {
+                this.console.log(`Config received: ${JSON.stringify(config)}`);
+            });
+        }, 5000);
+    }
+
     async getSettings(): Promise<Setting[]> {
         const { useMqttPluginCredentials } = this.storageSettings.values;
         this.storageSettings.settings.mqttHost.hide = useMqttPluginCredentials;
@@ -82,6 +94,7 @@ class NeolinkProvider extends RtspProvider implements Settings {
         const username = this.storageSettings.values.rtspUsername;
         const password = this.storageSettings.values.rtspPassword;
         const cameraName = settings.cameraName as string;
+        const abilities = settings.abilities ?? [] as Ability[];
         const rtspPort = settings.rtspPort?.toString() ?? '8554';
         const ip = this.storageSettings.values.neolinkServerIp;
 
@@ -93,10 +106,12 @@ class NeolinkProvider extends RtspProvider implements Settings {
         nativeId = await super.createDevice(settings, nativeId);
 
         const device = await this.getDevice(nativeId) as NeolinkCamera;
-        device.putSetting('username', username);
-        device.putSetting('password', password);
-        device.putSetting('rtspPort', rtspPort);
-        device.putSetting('cameraName', cameraName);
+
+        device.storageSettings.putSetting('username', username);
+        device.storageSettings.putSetting('password', password);
+        device.storageSettings.putSetting('rtspPort', rtspPort);
+        device.storageSettings.putSetting('cameraName', cameraName);
+        device.storageSettings.putSetting('abilities', abilities);
         device.setIPAddress(ip?.toString());
 
         return nativeId;
@@ -108,6 +123,18 @@ class NeolinkProvider extends RtspProvider implements Settings {
                 key: 'cameraName',
                 title: 'Camera neolink name',
                 type: 'string',
+            },
+            {
+                key: 'abilities',
+                title: 'Abilities',
+                choices: [
+                    Ability.Battery,
+                    Ability.Siren,
+                    Ability.Floodlight,
+                    Ability.FloodlightTasks,
+                    Ability.Pir,
+                ],
+                multiple: true,
             }
         ]
     }
