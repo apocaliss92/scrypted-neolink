@@ -129,7 +129,6 @@ class NeolinkCameraPir extends ScryptedDeviceBase implements OnOff {
     }
 }
 
-
 class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     mqttClient: MqttClient;
     videoStreamOptions: Promise<UrlMediaStreamOptions[]>;
@@ -316,7 +315,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             this.startBatteryCheckInterval();
         }
 
-        this.startMqttListeners();
+        await this.startMqttListeners();
 
         await this.provider.updateDevice(this.nativeId, this.name ?? name, interfaces, ScryptedDeviceType.Camera);
     }

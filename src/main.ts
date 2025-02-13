@@ -4,10 +4,31 @@ import { RtspProvider } from '../../scrypted/plugins/rtsp/src/rtsp';
 import NeolinkCamera from './camera';
 import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
 import { getMqttBasicClient } from '../../scrypted-apocaliss-base/src/basePlugin';
+import { getNeolinkRelease, neolinkReleases, runCommand, System } from "./utils";
+import fs from 'fs';
+import AdmZip from 'adm-zip';
+import { execSync } from "child_process";
 
 class NeolinkProvider extends RtspProvider implements Settings {
     mqttClient: MqttClient;
+    currentMixins = new Set<NeolinkCamera>();
+
     storageSettings = new StorageSettings(this, {
+        spinServer: {
+            title: 'Spin up a Neolink server',
+            type: 'boolean',
+            defaultValue: false,
+            immediate: true,
+            onPut: async (_, isActive) => await this.toggleServerNeolink(isActive)
+        },
+        neolinkServerVersion: {
+            title: 'Neolink version',
+            choices: neolinkReleases,
+            defaultValue: neolinkReleases[0],
+            type: 'string',
+            group: 'Neolink server',
+            onPut: async (_, ver) => await this.spinNeolinkServer(ver)
+        },
         neolinkServerIp: {
             title: 'Neolink server IP',
             type: 'string',
@@ -51,6 +72,81 @@ class NeolinkProvider extends RtspProvider implements Settings {
             group: 'MQTT',
         },
     });
+
+    constructor() {
+        super();
+        this.toggleServerNeolink(this.storageSettings.values.spinServer).catch(this.console.log);
+    }
+
+    async toggleServerNeolink(isActive: boolean) {
+        this.storageSettings.settings.neolinkServerIp.hide = isActive;
+        this.storageSettings.settings.neolinkServerPort.hide = isActive;
+        this.storageSettings.settings.rtspUsername.hide = isActive;
+        this.storageSettings.settings.rtspPassword.hide = isActive;
+        this.storageSettings.settings.neolinkServerVersion.hide = !isActive;
+
+        if (isActive) {
+            await this.spinNeolinkServer(this.storageSettings.values.neolinkServerVersion);
+        } else {
+            await this.stopNeolinkServer();
+        }
+    }
+
+    async stopNeolinkServer() { }
+
+    async spinNeolinkServer(version: string) {
+        const { downloadUrl, system, filename } = getNeolinkRelease(version);
+        const folder = process.env.SCRYPTED_PLUGIN_VOLUME;
+        const installationFolder = `${folder}/neolinkServer`;
+        const zipPath = `${installationFolder}/neolink.zip`;
+        const scriptPath = `${installationFolder}/${filename}/neolink`;
+        if ([System.MacM1, System.MacIntel].includes(system)) {
+            try {
+                if (fs.existsSync(installationFolder)) {
+                    fs.rmSync(installationFolder, { recursive: true, force: true });
+                }
+                fs.mkdirSync(installationFolder, { recursive: true })
+
+                this.console.log(`Downloading the neolink package`);
+                await runCommand('curl', [
+                    '-L', downloadUrl,
+                    '-o', zipPath
+                ], this.console);
+
+                console.log('Extracting NeoLink...');
+                const zip = new AdmZip(zipPath);
+                zip.extractAllTo(installationFolder, true);
+
+                this.console.log(`Downloading required libraries`);
+                if (system === System.MacM1) {
+                    await runCommand('arch', [
+                        '-arm64', 'brew',
+                        'install', 'gstreamer',
+                        'gst-plugins-base', 'gst-plugins-good',
+                        'gst-plugins-bad', 'gst-plugins-ugly',
+                        'gst-libav'
+                    ], this.console);
+                } else {
+                    await runCommand('brew', [
+                        'install', 'gstreamer',
+                        'gst-plugins-base', 'gst-plugins-good',
+                        'gst-plugins-bad', 'gst-plugins-ugly',
+                        'gst-libav'
+                    ], this.console);
+                }
+
+                await runCommand(`chmod`, ['+x', scriptPath], this.console);
+
+                this.console.log(`Starting neolink`);
+                await runCommand(`${scriptPath}`, [
+                    'mqtt-rtsp', '--config=neolink.toml'
+                ], this.console);
+
+            } catch (e) {
+                this.console.log('Error during installation script', e);
+            }
+        }
+    }
 
     async getSettings(): Promise<Setting[]> {
         return await this.storageSettings.getSettings();
