@@ -2,6 +2,7 @@
 import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
 
 export const getMqttTopics = (cameraName: string) => {
+    const statusTopic = `neolink/${cameraName}/status`;
     const batteryStatusTopic = `neolink/${cameraName}/status/battery_level`;
     const motionStatusTopic = `neolink/${cameraName}/status/motion`;
     const disconnecteStatusdTopic = `neolink/${cameraName}/status/disconnected`;
@@ -23,6 +24,7 @@ export const getMqttTopics = (cameraName: string) => {
     const pirControlTopic = `neolink/${cameraName}/control/pir`;
 
     return {
+        statusTopic,
         batteryStatusTopic,
         motionStatusTopic,
         disconnecteStatusdTopic,
@@ -41,26 +43,6 @@ export const getMqttTopics = (cameraName: string) => {
         irControlTopic,
         pirControlTopic,
     }
-}
-
-export const subscribeToNeolinkTopics = async (client: MqttClient, neolinkName: string, console: Console, cb: (batteryLevel?: number, preview?: string, presets?: string) => void) => {
-    const batteryTopic = `neolink/${neolinkName}/status/battery_level`;
-    const previewTopic = `neolink/${neolinkName}/status/preview`;
-    const presetsTopic = `neolink/${neolinkName}/status/ptz/preset`;
-
-    client.subscribe([batteryTopic, previewTopic, presetsTopic], async (messageTopic, message) => {
-        const messageString = message.toString();
-        if (messageTopic === batteryTopic) {
-            cb(messageString !== 'null' ? JSON.parse(messageString) : undefined, undefined), undefined;
-        }
-        if (messageTopic === previewTopic) {
-            cb(undefined, messageString, undefined);
-        }
-        if (messageTopic === presetsTopic) {
-            console.log(messageTopic, messageString);
-            cb(undefined, undefined, messageString);
-        }
-    });
 }
 
 export const subscribeToNeolinkTopic = async (client: MqttClient, topic: string, console: Console, cb: (value?: any) => void) => {

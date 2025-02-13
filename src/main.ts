@@ -6,7 +6,6 @@ import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
 import { getMqttBasicClient } from '../../scrypted-apocaliss-base/src/basePlugin';
 
 class NeolinkProvider extends RtspProvider implements Settings {
-    mqttClient: MqttClient;
     storageSettings = new StorageSettings(this, {
         neolinkServerIp: {
             title: 'Neolink server IP',
@@ -52,7 +51,14 @@ class NeolinkProvider extends RtspProvider implements Settings {
         },
     });
 
+    mqttClient: MqttClient;
+
     async getSettings(): Promise<Setting[]> {
+        const { useMqttPluginCredentials } = this.storageSettings.values;
+        this.storageSettings.settings.mqttHost.hide = useMqttPluginCredentials;
+        this.storageSettings.settings.mqttPassword.hide = useMqttPluginCredentials;
+        this.storageSettings.settings.mqttUsename.hide = useMqttPluginCredentials;
+
         return await this.storageSettings.getSettings();
     }
 
@@ -121,11 +127,12 @@ class NeolinkProvider extends RtspProvider implements Settings {
         try {
             this.mqttClient = await getMqttBasicClient({
                 logger,
-                useMqttPluginCredentials: this.storageSettings.getItem('useMqttPluginCredentials'),
-                mqttHost: this.storageSettings.getItem('mqttHost'),
-                mqttUsename: this.storageSettings.getItem('mqttUsename'),
-                mqttPassword: this.storageSettings.getItem('mqttPassword'),
+                useMqttPluginCredentials: this.storageSettings.values.useMqttPluginCredentials,
+                mqttHost: this.storageSettings.values.mqttHost,
+                mqttUsename: this.storageSettings.values.mqttUsename,
+                mqttPassword: this.storageSettings.values.mqttPassword,
             });
+            await this.mqttClient.getMqttClient();
         } catch (e) {
             this.console.log('Error setting up MQTT client', e);
         }

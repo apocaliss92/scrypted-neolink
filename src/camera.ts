@@ -6,7 +6,7 @@ import { Destroyable, RtspSmartCamera, createRtspMediaStreamOptions } from '../.
 import NeolinkProvider from "./main";
 import EventEmitter from "events";
 import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
-import { getMqttTopics, subscribeToNeolinkTopic, subscribeToNeolinkTopics, unsubscribeFromNeolinkTopic } from "./utils";
+import { getMqttTopics, subscribeToNeolinkTopic, unsubscribeFromNeolinkTopic } from "./utils";
 
 enum Ability {
     Battery = 'Battery',
@@ -221,6 +221,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         // };
 
         (async () => {
+            await this.provider.getMqttClient();
             this.updatePtzCaps();
             // try {
             //     await this.getPresets();
@@ -312,7 +313,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             interfaces.push(ScryptedInterface.DeviceProvider);
 
         if (this.hasBattery()) {
-            interfaces.push(ScryptedInterface.Battery);
+            interfaces.push(ScryptedInterface.Battery, ScryptedInterface.Sleep);
             this.startBatteryCheckInterval();
         }
 
@@ -322,7 +323,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     }
 
     async listenEvents(): Promise<Destroyable> {
-        const { cameraName, motionTimeout } = this.storageSettings.values;
+        const { cameraName } = this.storageSettings.values;
         const { motionStatusTopic } = getMqttTopics(cameraName);
         const events = new EventEmitter();
         const ret: Destroyable = {
@@ -338,7 +339,28 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             }
         };
 
+        return ret;
+    }
+
+    async startMqttListeners() {
+        const { cameraName, motionTimeout } = this.storageSettings.values;
+
         const mqttClient = await this.provider.getMqttClient();
+        const { previewStatusTopic, statusTopic, motionStatusTopic } = getMqttTopics(cameraName);
+
+        subscribeToNeolinkTopic(mqttClient, previewStatusTopic, this.console, (preview: string) => {
+            this.console.log(`New snapshot received: ${preview.substring(0, 20)}...`);
+            this.lastPreview = preview;
+        });
+        subscribeToNeolinkTopic(mqttClient, statusTopic, this.console, (status: string) => {
+            this.console.log(`Connection status: ${status}`);
+            if (status === 'connected') {
+                this.sleeping = false;
+            } else if (status === 'disconnected') {
+                this.sleeping = true;
+            }
+        });
+
         await subscribeToNeolinkTopic(mqttClient, motionStatusTopic, this.console, (motion: 'on' | 'off') => {
             this.console.log(`Motion received: ${motion}`);
             if (motion === 'on') {
@@ -351,19 +373,6 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             }
         })
 
-        return ret;
-    }
-
-    async startMqttListeners() {
-        const { cameraName } = this.storageSettings.values;
-
-        const mqttClient = await this.provider.getMqttClient();
-        const { previewStatusTopic } = getMqttTopics(cameraName);
-
-        subscribeToNeolinkTopic(mqttClient, previewStatusTopic, this.console, (preview: string) => {
-            this.console.log(`New snapshot received: ${preview.substring(0, 20)}...`);
-            this.lastPreview = preview;
-        });
     }
 
     async startBatteryCheckInterval() {
