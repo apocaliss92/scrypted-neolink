@@ -46,6 +46,7 @@ export const getMqttTopics = (cameraName: string) => {
 }
 
 export const subscribeToNeolinkTopic = async (client: MqttClient, topic: string, console: Console, cb: (value?: any) => void) => {
+    console.log(`Subscribing to topic ${topic}`)
     client.subscribe([topic], async (messageTopic, message) => {
         const messageString = message.toString();
         if (messageTopic === topic) {
