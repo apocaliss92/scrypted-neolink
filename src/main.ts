@@ -152,14 +152,24 @@ class NeolinkProvider extends RtspProvider implements Settings {
         }
 
         try {
-            this.mqttClient = await getMqttBasicClient({
+            this.mqttClient = await this.setupMqttClientInternal(logger);
+        } catch (e) {
+            this.console.log('Error setting up MQTT client', e);
+        }
+    }
+
+    public async setupMqttClientInternal(logger: Console) {
+        try {
+            const client = await getMqttBasicClient({
                 logger,
                 useMqttPluginCredentials: this.storageSettings.values.useMqttPluginCredentials,
                 mqttHost: this.storageSettings.values.mqttHost,
                 mqttUsename: this.storageSettings.values.mqttUsename,
                 mqttPassword: this.storageSettings.values.mqttPassword,
             });
-            await this.mqttClient.getMqttClient();
+            await client.getMqttClient();
+
+            return client
         } catch (e) {
             this.console.log('Error setting up MQTT client', e);
         }

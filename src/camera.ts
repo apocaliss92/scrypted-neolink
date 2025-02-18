@@ -7,6 +7,7 @@ import NeolinkProvider from "./main";
 import EventEmitter from "events";
 import MqttClient from '../../scrypted-apocaliss-base/src/mqtt-client';
 import { getMqttTopics, subscribeToNeolinkTopic, unsubscribeFromNeolinkTopic } from "./utils";
+import { getMqttBasicClient } from "../../scrypted-apocaliss-base/src/basePlugin";
 
 export enum Ability {
     Battery = 'Battery',
@@ -216,8 +217,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         //     };
         // };
 
-        (async () => {
-            await this.provider.getMqttClient();
+        setTimeout(async () => {
             this.updatePtzCaps();
             // try {
             //     await this.getPresets();
@@ -226,10 +226,30 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             // }
             await this.updateDevice();
             await this.reportDevices();
-        })()
-            .catch(e => {
-                this.console.log('device refresh failed', e);
-            });
+        }, 2000);
+    }
+
+    private async setupMqttClient() {
+        const logger = this.console;
+
+        if (this.mqttClient) {
+            await this.mqttClient.disconnect();
+            this.mqttClient = undefined;
+        }
+
+        try {
+            this.mqttClient = await this.provider.setupMqttClientInternal(logger);
+        } catch (e) {
+            this.console.log('Error setting up MQTT client', e);
+        }
+    }
+
+    async getMqttClient() {
+        if (!this.mqttClient) {
+            await this.setupMqttClient();
+        }
+
+        return this.mqttClient;
     }
 
     updatePtzCaps() {
@@ -250,7 +270,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     // }
 
     async ptzCommand(command: PanTiltZoomCommand): Promise<void> {
-        const mqttClient = await this.provider.getMqttClient();
+        const mqttClient = await this.getMqttClient();
         const { cameraName } = this.storageSettings.values;
 
         // if (command.preset && !Number.isNaN(Number(command.preset))) {
@@ -299,6 +319,8 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     }
 
     async updateDevice() {
+        await this.setupMqttClient();
+
         const interfaces = this.provider.getInterfaces();
         let name = 'Neolink Camera';
 
@@ -313,7 +335,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
             this.startBatteryCheckInterval();
         }
 
-        this.startMqttListeners();
+        await this.startMqttListeners();
 
         await this.provider.updateDevice(this.nativeId, this.name ?? name, interfaces, ScryptedDeviceType.Camera);
     }
@@ -327,7 +349,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
                 events.on(eventName, listener);
             },
             destroy: async () => {
-                const mqttClient = await this.provider.getMqttClient();
+                const mqttClient = await this.getMqttClient();
                 await unsubscribeFromNeolinkTopic(mqttClient, motionStatusTopic, this.console)
             },
             emit: function (eventName: string | symbol, ...args: any[]): boolean {
@@ -341,7 +363,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     async startMqttListeners() {
         const { cameraName, motionTimeout } = this.storageSettings.values;
 
-        const mqttClient = await this.provider.getMqttClient();
+        const mqttClient = await this.getMqttClient();
         const { previewStatusTopic, statusTopic, motionStatusTopic } = getMqttTopics(cameraName);
 
         await subscribeToNeolinkTopic(mqttClient, previewStatusTopic, this.console, (preview: string) => {
@@ -376,7 +398,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         if (this.batteryTimeout) {
             clearInterval(this.batteryTimeout);
         }
-        const mqttClient = await this.provider.getMqttClient();
+        const mqttClient = await this.getMqttClient();
 
         const { batteryQueryTopic, batteryStatusTopic, previewQueryTopic } = getMqttTopics(cameraName);
 
@@ -394,7 +416,7 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
     async takeSmartCameraPicture(options?: RequestPictureOptions): Promise<MediaObject> {
         const { cameraName } = this.storageSettings.values;
 
-        const mqttClient = await this.provider.getMqttClient();
+        const mqttClient = await this.getMqttClient();
 
         if (!this.hasBattery()) {
             const { previewQueryTopic } = getMqttTopics(cameraName);
@@ -466,7 +488,6 @@ class NeolinkCamera extends RtspSmartCamera implements Camera, PanTiltZoom {
         else {
             await super.putSetting(key, value);
         }
-        this.updateDevice();
     }
 
     showRtspUrlOverride() {
