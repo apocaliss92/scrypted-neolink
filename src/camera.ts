@@ -32,7 +32,6 @@ class NeolinkCameraSiren extends ScryptedDeviceBase implements OnOff {
 
     constructor(public camera: NeolinkCamera, nativeId: string) {
         super(nativeId);
-        this.on = false;
     }
 
     async turnOff() {
@@ -57,7 +56,6 @@ class NeolinkCameraSiren extends ScryptedDeviceBase implements OnOff {
 class NeolinkCameraFloodlight extends ScryptedDeviceBase implements OnOff {
     constructor(public camera: NeolinkCamera, nativeId: string) {
         super(nativeId);
-        this.on = false;
     }
 
     async turnOff() {
@@ -82,7 +80,6 @@ class NeolinkCameraFloodlight extends ScryptedDeviceBase implements OnOff {
 class NeolinkCameraFloodlightTasks extends ScryptedDeviceBase implements OnOff {
     constructor(public camera: NeolinkCamera, nativeId: string) {
         super(nativeId);
-        this.on = false;
     }
 
     async turnOff() {
@@ -107,7 +104,6 @@ class NeolinkCameraFloodlightTasks extends ScryptedDeviceBase implements OnOff {
 class NeolinkCameraPir extends ScryptedDeviceBase implements OnOff {
     constructor(public camera: NeolinkCamera, nativeId: string) {
         super(nativeId);
-        this.on = false;
     }
 
     async turnOff() {
