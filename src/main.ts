@@ -102,7 +102,7 @@ class NeolinkProvider extends RtspProvider implements Settings {
             this.console.log('Camera name and IP are required');
             return;
         }
-        settings.newCamera = cameraName.toString().match(/[A-Z][a-z]+/g).join(' ');
+        settings.newCamera = cameraName.toString().match(/[A-Z][a-z]+/g)?.join(' ');
         nativeId = await super.createDevice(settings, nativeId);
 
         const device = await this.getDevice(nativeId) as NeolinkCamera;
